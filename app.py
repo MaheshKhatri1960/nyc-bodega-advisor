@@ -6,7 +6,7 @@ import os
 import datetime
 
 # --- CONFIGURATION ---
-MODEL_ID = "gemini-1.5-flash"  # Low latency for hackathon
+MODEL_ID = "gemini-1.5-flash-latest"  # Robust alias for hackathon stability
 
 NYC_PERSONA = """
 You are 'Tony', a savvy, street-smart NYC retail consultant for local bodegas. 
