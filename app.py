@@ -108,12 +108,22 @@ def create_whatsapp_card(img, tagline, phone, hours):
     out = Image.alpha_composite(base, txt)
     return out.convert("RGB")
 
-def generate_audio_pitch(text, lang='en'):
-    tts = gTTS(text=text, lang=lang)
+def generate_audio_pitch(text, lang='en', is_sample=False):
     ts = int(time.time())
     filename = f"pitch_{lang}_{ts}.mp3"
-    tts.save(filename)
-    return filename
+    
+    # MASTER DEMO FALLBACK: Use pre-generated files for the sample photo
+    sample_file = f"sample_{lang}.mp3"
+    if is_sample and os.path.exists(sample_file):
+        return sample_file
+
+    try:
+        tts = gTTS(text=text, lang=lang)
+        tts.save(filename)
+        return filename
+    except Exception as e:
+        # If gTTS 429 occurs, return None so UI can show a fallback message
+        return None
 
 # --- MAIN UI ---
 st.title("🍎 NYC Bodega Advisor AI")
@@ -163,8 +173,12 @@ if working_img and api_key:
                 
                 st.session_state.card = create_whatsapp_card(working_img, tagline, shop_phone, shop_hours)
                 st.session_state.tagline = tagline
-                st.session_state.en_audio = generate_audio_pitch(en_pitch, 'en')
-                st.session_state.es_audio = generate_audio_pitch(es_pitch, 'es')
+                
+                # Identify if we are in demo mode for audio fallback
+                is_demo = not input_file and os.path.exists(sample_img_path)
+                
+                st.session_state.en_audio = generate_audio_pitch(en_pitch, 'en', is_sample=is_demo)
+                st.session_state.es_audio = generate_audio_pitch(es_pitch, 'es', is_sample=is_demo)
             except Exception as e:
                 st.error(f"Error: {e}")
 
@@ -183,9 +197,16 @@ if working_img and api_key:
                 st.download_button("Download Image", file, temp_path, "image/jpeg")
         with tabs[2]:
             st.subheader("English Pitch")
-            st.audio(st.session_state.en_audio)
+            if st.session_state.en_audio:
+                st.audio(st.session_state.en_audio)
+            else:
+                st.warning("⚠️ Tony's voice is resting (API limit). Read the English pitch in the Retail Strategy tab!")
+                
             st.subheader("Spanish Pitch (Sabor Local)")
-            st.audio(st.session_state.es_audio)
+            if st.session_state.es_audio:
+                st.audio(st.session_state.es_audio)
+            else:
+                st.warning("⚠️ El audio está en pausa. ¡Lea el discurso en español arriba!")
         with tabs[3]:
             st.info("Print this and stick it to your shelf!")
             st.markdown(f"""
