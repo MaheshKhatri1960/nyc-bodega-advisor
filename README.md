@@ -1,5 +1,7 @@
 # 🍎 NYC Bodega AI Retail Advisor
 
+**Live Demo**: [https://nyc-bodega-advisor-1039268545039.us-east1.run.app](https://nyc-bodega-advisor-1039268545039.us-east1.run.app)
+
 A "Main Street AI" tool designed for small grocery owners in NYC to increase loyalty and sales through multimodal AI.
 
 ## 🚀 Features
