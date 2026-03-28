@@ -142,16 +142,26 @@ for key in ["advice", "card", "en_audio", "es_audio", "tagline"]:
     if key not in st.session_state:
         st.session_state[key] = None
 
-# MASTER LOGIC: Support live input OR sample photo fallback
+# MASTER LOGIC: Show both, but prioritize live for analysis
 input_file = img_file if img_file else up_file
 sample_img_path = "sample_shelf.png"
 working_img = None
 
-if input_file:
-    working_img = Image.open(input_file)
-elif os.path.exists(sample_img_path):
-    working_img = Image.open(sample_img_path)
-    st.info("🏪 Demo Mode: Using NYC Bodega Sample Photo")
+st.markdown("---")
+img_col1, img_col2 = st.columns(2)
+
+with img_col1:
+    if os.path.exists(sample_img_path):
+        st.image(sample_img_path, caption="🏙️ Tony's Prototype Reference")
+        working_img = Image.open(sample_img_path) # Default to prototype
+
+with img_col2:
+    if input_file:
+        live_img = Image.open(input_file)
+        st.image(live_img, caption="📸 Your Live Shop Snap")
+        working_img = live_img # Live takes priority for analysis
+    else:
+        st.info("💡 Pro Tip: Upload your own photo to see Tony analyze your shop!")
 
 if working_img and api_key:
     if st.button("🚀 Generate Boost Package"):
