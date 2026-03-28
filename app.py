@@ -4,9 +4,11 @@ from PIL import Image, ImageDraw, ImageFont
 from gtts import gTTS
 import os
 import datetime
+import time
+from dotenv import load_dotenv
 
 # --- CONFIGURATION ---
-MODEL_ID = "gemini-1.5-flash-latest"  # Robust alias for hackathon stability
+load_dotenv() # Load local .env for development
 
 NYC_PERSONA = """
 You are 'Tony', a savvy, street-smart NYC retail consultant for local bodegas. 
@@ -36,19 +38,42 @@ st.set_page_config(page_title="🍎 NYC Bodega Advisor AI", layout="wide")
 # --- SIDEBAR: Settings ---
 with st.sidebar:
     st.header("🏪 Shop Settings")
-    api_key = st.text_input("Enter Google Gemini API Key", type="password")
+    
+    # Secret Logic: Try to get API key from environment first
+    env_key = os.getenv("GOOGLE_API_KEY", "")
+    api_key_input = st.text_input("Enter Google Gemini API Key", value=env_key, type="password")
+    
+    # Final API key used in the app
+    api_key = api_key_input if api_key_input else env_key
+    
     shop_name = st.text_input("Shop Name", "My NYC Grocery")
     shop_phone = st.text_input("WhatsApp Number", "+1 (212) - 123 4567")
     shop_hours = st.text_input("Timings", "8:00 AM - 8:00 PM")
     shop_vibe = st.radio("Shop Vibe", ["Community Friendly", "Deals Focused", "Premium Quality"])
     
     st.markdown("---")
-    st.info("💡 Pro Tip: Snap a photo of your shelves to get placement advice!")
+    if api_key:
+        st.success("✅ Gemini API Secret Loaded")
+    else:
+        st.warning("⚠️ No API Key Detected")
 
 # --- FUNCTIONS ---
 def get_retail_advice(image, problem, api_key, vibe):
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(MODEL_ID, system_instruction=NYC_PERSONA)
+    
+    # DYNAMIC SELECTION: Find the best available Flash model (Prioritizing 2.5)
+    model_name = "gemini-1.5-flash" # Fallback
+    try:
+        available_models = [m.name for m in genai.list_models() 
+                           if 'generateContent' in m.supported_generation_methods 
+                           and 'flash' in m.name.lower()]
+        if available_models:
+            # Sorting reverse gives us 2.5 > 2.0 > 1.5
+            model_name = sorted(available_models, reverse=True)[0]
+    except:
+        pass
+        
+    model = genai.GenerativeModel(model_name, system_instruction=NYC_PERSONA)
     
     prompt = f"""
     Business Problem: {problem or 'Help me sell this more effectively for the upcoming holidays!'}
@@ -65,19 +90,13 @@ def get_retail_advice(image, problem, api_key, vibe):
     return response.text
 
 def create_whatsapp_card(img, tagline, phone, hours):
-    # Resize image for standard card size if needed
     base = img.convert("RGBA")
     txt = Image.new("RGBA", base.size, (255, 255, 255, 0))
     draw = ImageDraw.Draw(txt)
-    
-    # Overlay semi-transparent box at the bottom
     w, h = base.size
     box_height = h // 4
     draw.rectangle([0, h - box_height, w, h], fill=(0, 0, 0, 160))
     
-    # Text Drawing logic (simplified for hackathon)
-    # Note: In a real hackathon, you'd load a local font file. 
-    # Here we use default for speed, though results vary.
     try:
         font = ImageFont.load_default()
     except:
@@ -91,7 +110,8 @@ def create_whatsapp_card(img, tagline, phone, hours):
 
 def generate_audio_pitch(text, lang='en'):
     tts = gTTS(text=text, lang=lang)
-    filename = f"pitch_{lang}.mp3"
+    ts = int(time.time())
+    filename = f"pitch_{lang}_{ts}.mp3"
     tts.save(filename)
     return filename
 
@@ -108,34 +128,31 @@ with col1:
     voice_msg = st.text_input("Tell Tony your problem (e.g. 'Easter is coming and my chocolate isn't moving!')")
 
 # Initialize session state for persistence
-if "advice" not in st.session_state:
-    st.session_state.advice = None
-if "card" not in st.session_state:
-    st.session_state.card = None
-if "en_audio" not in st.session_state:
-    st.session_state.en_audio = None
-if "es_audio" not in st.session_state:
-    st.session_state.es_audio = None
-if "tagline" not in st.session_state:
-    st.session_state.tagline = None
+for key in ["advice", "card", "en_audio", "es_audio", "tagline"]:
+    if key not in st.session_state:
+        st.session_state[key] = None
 
-# Logic to pick between camera and uploader
+# MASTER LOGIC: Support live input OR sample photo fallback
 input_file = img_file if img_file else up_file
+sample_img_path = "sample_shelf.png"
+working_img = None
 
-if input_file and api_key:
-    img = Image.open(input_file)
-    
+if input_file:
+    working_img = Image.open(input_file)
+elif os.path.exists(sample_img_path):
+    working_img = Image.open(sample_img_path)
+    st.info("🏪 Demo Mode: Using NYC Bodega Sample Photo")
+
+if working_img and api_key:
     if st.button("🚀 Generate Boost Package"):
         with st.spinner("Talking to Tony..."):
             try:
-                # 1. Get AI Advice
-                advice_text = get_retail_advice(img, voice_msg, api_key, shop_vibe)
+                advice_text = get_retail_advice(working_img, voice_msg, api_key, shop_vibe)
                 st.session_state.advice = advice_text
                 
-                # 2. Extract Tagline & Pitches
                 tagline = "Fresh & Local Bodega Vibes!"
-                en_pitch = "Come check out our fresh deals today at the shop!"
-                es_pitch = "¡Vengan a ver nuestras ofertas hoy en la tienda!"
+                en_pitch = "Come check out our fresh deals today!"
+                es_pitch = "¡Vengan a ver nuestras ofertas hoy!"
                 
                 if "[TAGLINE]:" in advice_text:
                     tagline = advice_text.split("[TAGLINE]:")[1].split("\n")[0].strip().strip('"')
@@ -144,38 +161,31 @@ if input_file and api_key:
                 if "[SPANISH_PITCH]:" in advice_text:
                     es_pitch = advice_text.split("[SPANISH_PITCH]:")[1].split("\n")[0].strip().strip('"')
                 
-                # 3. Create Visuals
-                st.session_state.card = create_whatsapp_card(img, tagline, shop_phone, shop_hours)
+                st.session_state.card = create_whatsapp_card(working_img, tagline, shop_phone, shop_hours)
                 st.session_state.tagline = tagline
-                
-                # 4. Generate Audio
                 st.session_state.en_audio = generate_audio_pitch(en_pitch, 'en')
                 st.session_state.es_audio = generate_audio_pitch(es_pitch, 'es')
-                
             except Exception as e:
                 st.error(f"Error: {e}")
 
-    # Display results if they exist in session state
+    # Display results
     if st.session_state.advice:
         st.success("✅ Boost Package Ready!")
         tabs = st.tabs(["📊 Retail Strategy", "📱 WhatsApp Card", "🔊 Audio Pitch", "📄 Shelf Tag"])
         
         with tabs[0]:
             st.markdown(st.session_state.advice)
-        
         with tabs[1]:
             st.image(st.session_state.card, caption="Send this to your WhatsApp Status!")
-            # Save and provide download
-            st.session_state.card.save("whatsapp_status.jpg")
-            with open("whatsapp_status.jpg", "rb") as file:
-                st.download_button("Download Image", file, "whatsapp_status.jpg", "image/jpeg")
-        
+            temp_path = "whatsapp_status_final.jpg"
+            st.session_state.card.save(temp_path)
+            with open(temp_path, "rb") as file:
+                st.download_button("Download Image", file, temp_path, "image/jpeg")
         with tabs[2]:
             st.subheader("English Pitch")
             st.audio(st.session_state.en_audio)
             st.subheader("Spanish Pitch (Sabor Local)")
             st.audio(st.session_state.es_audio)
-        
         with tabs[3]:
             st.info("Print this and stick it to your shelf!")
             st.markdown(f"""
@@ -186,7 +196,8 @@ if input_file and api_key:
                 <p style="font-size: 18px;">{shop_phone}</p>
             </div>
             """, unsafe_allow_html=True)
-            st.button("🖨️ Print (Mock)")
 
 elif not api_key:
-    st.warning("Please enter your Google Gemini API Key in the sidebar to start.")
+    st.warning("Please enter your Google Gemini API Key in the sidebar to start (or set it in Cloud Envs).")
+elif not working_img:
+    st.warning("Please upload a photo or camera snap to get started.")
