@@ -1,0 +1,10 @@
+backups/
+*.bak
+.git/
+venv/
+__pycache__/
+*.mp3
+outputs/
+whatsapp_status.jpg
+pitch_en.mp3
+pitch_es.mp3
